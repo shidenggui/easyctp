@@ -4,7 +4,7 @@ from setuptools import setup
 import easyctp
 
 setup(
-    name='easytrader',
+    name='easyctp',
     version=easyctp.__version__,
     description='A utility for Chain ctp',
     author='shidenggui',

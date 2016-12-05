@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 import influxdb
 from ctp.futures import ApiStruct
 
+from easyctp.log import log
+
 
 class InfluxWorker:
     def __init__(self, queue, worker=1,
@@ -15,8 +17,7 @@ class InfluxWorker:
                  port=8086,
                  username='root',
                  password='root',
-                 database=None,
-                 *args, **kwargs):
+                 database=None):
         if 'influxdb://' in host:
             args = urlparse(host)
             host = args.hostname
@@ -53,7 +54,6 @@ class InfluxWorker:
 
     def insert(self, item):
         assert isinstance(item, ApiStruct.DepthMarketData)
-        print(item)
         points = [{
             'measurement': 'ctp',
             'tags': {
@@ -69,9 +69,9 @@ class InfluxWorker:
                            PreDelta=item.PreDelta, CurrDelta=item.CurrDelta,
                            BidPrice1=item.BidPrice1, BidVolume1=item.BidVolume1, AskPrice1=item.AskPrice1,
                            AskVolume1=item.AskVolume1, AveragePrice=item.AveragePrice),
-            'time': '{}T{}.{:03d}'.format(item.ActionDay.decode(), item.UpdateTime.decode(), item.UpdateMillisec)
+            'time': '{}T{}.{:03d}+08:00'.format(item.ActionDay.decode(), item.UpdateTime.decode(), item.UpdateMillisec)
         }]
         try:
             self.client.write_points(points, database=self.database)
         except Exception as e:
-            print('influxdb client write points error: ', e)
+            log.error('influxdb client write points error: ', e)
