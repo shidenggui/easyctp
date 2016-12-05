@@ -1,0 +1,21 @@
+FROM python:3.5
+
+COPY requirements.txt /requirements.txt
+RUN pip install -r requirements.txt
+
+RUN git clone https://github.com/lovelylain/pyctp
+RUN cd pyctp && \
+    python setup.py build && \
+    python setup.py install
+
+COPY $PWD /easyctp
+RUN cd easyctp && python setup.py install
+
+WORKDIR /easyctp
+ENTRYPOINT ["python", "scripts/subscription_ctp_to_influxdb.py"]
+
+
+
+
+
+

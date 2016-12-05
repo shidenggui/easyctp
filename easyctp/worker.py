@@ -3,17 +3,33 @@ import traceback
 from multiprocessing.dummy import Pool
 from multiprocessing.pool import ApplyResult
 from queue import Queue
+from urllib.parse import urlparse
 
 import influxdb
 from ctp.futures import ApiStruct
 
 
 class InfluxWorker:
-    def __init__(self, queue, db_name, worker=1, *args, **kwargs):
-        self.db_name = db_name
+    def __init__(self, queue, worker=1,
+                 host='localhost',
+                 port=8086,
+                 username='root',
+                 password='root',
+                 database=None,
+                 *args, **kwargs):
+        if 'influxdb://' in host:
+            args = urlparse(host)
+            host = args.hostname
+            port = args.port
+            username = args.username
+            password = args.password
+            database = args.path[1:]
 
-        self.client = influxdb.InfluxDBClient(*args, **kwargs)
-        self.client.create_database(self.db_name)
+        self.database = database
+
+        self.client = influxdb.InfluxDBClient(host=host, username=username, password=password, database=database,
+                                              port=port)
+        self.client.create_database(self.database)
 
         self.queue = queue
         self.pool = Pool(worker)
@@ -56,6 +72,6 @@ class InfluxWorker:
             'time': '{}T{}.{:03d}'.format(item.ActionDay.decode(), item.UpdateTime.decode(), item.UpdateMillisec)
         }]
         try:
-            self.client.write_points(points, database=self.db_name)
+            self.client.write_points(points, database=self.database)
         except Exception as e:
             print('influxdb client write points error: ', e)

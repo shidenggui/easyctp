@@ -122,7 +122,7 @@ class MarketDataApi(MdApi):
             print('登录失败 ErrorID: {} ErrorMsg: {}'.format(pRspInfo.ErrorID, pRspInfo.ErrorMsg))
 
     def OnFrontConnected(self):
-        print('客户端与交易后台建立起通信连接成功, 开始登录')
+        print('客户端与交易后台建立连接成功, 开始登录')
         user_login_args = ApiStruct.ReqUserLogin(UserID=self.user,
                                                  Password=self.password,
                                                  BrokerID=self.broker)
