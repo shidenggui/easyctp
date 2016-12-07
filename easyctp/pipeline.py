@@ -1,7 +1,6 @@
 import threading
 import traceback
 from multiprocessing.dummy import Pool
-from multiprocessing.pool import ApplyResult
 from queue import Queue
 from urllib.parse import urlparse
 
@@ -11,13 +10,58 @@ from ctp.futures import ApiStruct
 from easyctp.log import log
 
 
-class InfluxWorker:
-    def __init__(self, queue, worker=1,
+class BasePipeline:
+    def __init__(self, queue, worker=1):
+        self.queue = queue
+        self.pool = Pool(worker)
+        self.result_queue = Queue()
+        threading.Thread(target=self._detect_error, daemon=True).start()
+
+    def __next__(self):
+        return self.get()
+
+    def __iter__(self):
+        return self
+
+    def start(self):
+        while True:
+            self.__next__()
+
+    def get(self):
+        item = self.queue.get()
+        future = self.pool.apply_async(self._process_item, args=(item,))
+        self.result_queue.put(future)
+        return self._convert_item(item)
+
+    def _process_item(self, item):
+        """impl code here"""
+        pass
+
+    def _convert_item(self, item):
+        return item
+
+    def _detect_error(self):
+        while True:
+            future = self.result_queue.get()
+            try:
+                future.get()
+            except:
+                traceback.print_exc()
+
+
+class ConvertDict(BasePipeline):
+    def _convert_item(self, item):
+        return dict(item)
+
+
+class SaveInflux(BasePipeline):
+    def __init__(self, queue, worker=10,
                  host='localhost',
                  port=8086,
                  username='root',
                  password='root',
                  database=None):
+        super().__init__(queue, worker)
         if 'influxdb://' in host:
             args = urlparse(host)
             host = args.hostname
@@ -32,27 +76,7 @@ class InfluxWorker:
                                               port=port)
         self.client.create_database(self.database)
 
-        self.queue = queue
-        self.pool = Pool(worker)
-        self.result_queue = Queue()
-        detect_error_worker = threading.Thread(target=self.detect_error, daemon=True)
-        detect_error_worker.start()
-
-    def start(self):
-        for item in self.queue:
-            future = self.pool.apply_async(self.insert, args=(item,))
-            self.result_queue.put(future)
-
-    def detect_error(self):
-        while True:
-            future = self.result_queue.get()
-            assert isinstance(future, ApplyResult)
-            try:
-                future.get()
-            except:
-                traceback.print_exc()
-
-    def insert(self, item):
+    def _process_item(self, item):
         assert isinstance(item, ApiStruct.DepthMarketData)
         points = [{
             'measurement': 'ctp',
@@ -75,3 +99,8 @@ class InfluxWorker:
             self.client.write_points(points, database=self.database)
         except Exception as e:
             log.error('influxdb client write points error: ', e)
+
+
+class PrintItem(BasePipeline):
+    def _process_item(self, item):
+        log.info('item: {}'.format(item))
