@@ -86,23 +86,28 @@ class SaveInflux(BasePipeline):
 
     def _process_item(self, item):
         assert isinstance(item, ApiStruct.DepthMarketData)
-        points = [{
-            'measurement': 'ctp',
-            'tags': {
-                'instrument_id': item.InstrumentID.decode(),
-            },
-            'fields': dict(LastPrice=item.LastPrice, PreSettlementPrice=item.PreSettlementPrice,
-                           PreClosePrice=item.PreClosePrice, PreOpenInterest=item.PreOpenInterest,
-                           OpenPrice=item.OpenPrice, HighestPrice=item.HighestPrice, LowestPrice=item.LowestPrice,
-                           Volume=item.Volume,
-                           Turnover=item.Turnover, OpenInterest=item.OpenInterest, ClosePrice=item.ClosePrice,
-                           SettlementPrice=item.SettlementPrice, UpperLimitPrice=item.UpperLimitPrice,
-                           LowerLimitPrice=item.LowerLimitPrice,
-                           PreDelta=item.PreDelta, CurrDelta=item.CurrDelta,
-                           BidPrice1=item.BidPrice1, BidVolume1=item.BidVolume1, AskPrice1=item.AskPrice1,
-                           AskVolume1=item.AskVolume1, AveragePrice=item.AveragePrice),
-            'time': '{}T{}.{:03d}+08:00'.format(item.ActionDay.decode(), item.UpdateTime.decode(), item.UpdateMillisec)
-        }]
+        try:
+            points = [{
+                'measurement': 'ctp',
+                'tags': {
+                    'instrument_id': item.InstrumentID.decode(),
+                },
+                'fields': dict(LastPrice=item.LastPrice, PreSettlementPrice=item.PreSettlementPrice,
+                               PreClosePrice=item.PreClosePrice, PreOpenInterest=item.PreOpenInterest,
+                               OpenPrice=item.OpenPrice, HighestPrice=item.HighestPrice, LowestPrice=item.LowestPrice,
+                               Volume=item.Volume,
+                               Turnover=item.Turnover, OpenInterest=item.OpenInterest, ClosePrice=item.ClosePrice,
+                               SettlementPrice=item.SettlementPrice, UpperLimitPrice=item.UpperLimitPrice,
+                               LowerLimitPrice=item.LowerLimitPrice,
+                               PreDelta=item.PreDelta, CurrDelta=item.CurrDelta,
+                               BidPrice1=item.BidPrice1, BidVolume1=item.BidVolume1, AskPrice1=item.AskPrice1,
+                               AskVolume1=item.AskVolume1, AveragePrice=item.AveragePrice),
+                'time': '{}T{}.{:03d}+08:00'.format(item.ActionDay.decode(), item.UpdateTime.decode(),
+                                                    item.UpdateMillisec)
+            }]
+        except UnicodeDecodeError:
+            log.error('invalid decode item {}, skipping'.format(item))
+            return
         try:
             self.client.write_points(points, database=self.database)
         except Exception as e:
