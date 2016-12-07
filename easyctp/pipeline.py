@@ -54,6 +54,14 @@ class ConvertDict(BasePipeline):
         return dict(item)
 
 
+class SaveMysql(BasePipeline):
+    pass
+
+
+class SaveMongo(BasePipeline):
+    pass
+
+
 class SaveInflux(BasePipeline):
     def __init__(self, queue, worker=10,
                  host='localhost',

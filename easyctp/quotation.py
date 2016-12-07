@@ -1,3 +1,4 @@
+import itertools
 import tempfile
 from queue import Queue, Empty
 
@@ -40,7 +41,7 @@ class MarketDataApi(MdApi):
         self.broker = None
         self.instrument_ids = None
 
-        self.request_id = 0
+        self.request_id = itertools.count()
         self.market_data = None
 
     def prepare(self, user, password, broker, front, instrument_ids, market_data=MarketData()):
@@ -74,7 +75,6 @@ class MarketDataApi(MdApi):
         return value
 
     def OnRspUserLogin(self, pRspUserLogin, pRspInfo, nRequestID, bIsLast):
-        assert isinstance(pRspInfo, ApiStruct.RspInfo)
         if pRspInfo.ErrorID == 0:
             log.info('登录成功，开始订阅合约 {}'.format(self.instrument_ids))
             self.SubscribeMarketData(self.instrument_ids)
@@ -89,8 +89,7 @@ class MarketDataApi(MdApi):
         user_login_args = ApiStruct.ReqUserLogin(UserID=self.user,
                                                  Password=self.password,
                                                  BrokerID=self.broker)
-        ret = self.ReqUserLogin(user_login_args, self.request_id)
-        self.request_id += 1
+        ret = self.ReqUserLogin(user_login_args, next(self.request_id))
 
         if ret == 0:
             log.info('登录信息发送成功，等待返回')

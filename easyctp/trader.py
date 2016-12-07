@@ -1,3 +1,4 @@
+import itertools
 import tempfile
 import time
 from collections import defaultdict
@@ -9,6 +10,26 @@ from ctp.futures import TraderApi, ApiStruct
 from easyctp.log import log
 
 
+class ResultMap:
+    def __init__(self):
+        self.map = defaultdict(Queue)
+
+    def get(self, request_id, timeout=None):
+        res_collect = []
+        while True:
+            try:
+                *res, is_last = self.map[request_id].get(timeout=timeout)
+            except Empty:
+                raise TimeoutError
+            res_collect.append(res)
+            if is_last:
+                del self.map[request_id]
+                return res_collect
+
+    def __getitem__(self, item):
+        return self.map[item]
+
+
 class EasyTrader(TraderApi):
     def __init__(self):
         super(TraderApi, self).__init__()
@@ -17,7 +38,7 @@ class EasyTrader(TraderApi):
         self.broker = None
         self.instrument_ids = None
 
-        self.request_id = 0
+        self.request_id = itertools.count()
         self.results_map = defaultdict(Queue)
         self.login_success = False
 
@@ -66,8 +87,7 @@ class EasyTrader(TraderApi):
         user_login_args = ApiStruct.ReqUserLogin(UserID=self.user,
                                                  Password=self.password,
                                                  BrokerID=self.broker)
-        ret = self.ReqUserLogin(user_login_args, self.request_id)
-        self.request_id += 1
+        ret = self.ReqUserLogin(user_login_args, next(self.request_id))
 
         if ret == 0:
             log.info('登录信息发送成功，等待返回')
@@ -80,9 +100,8 @@ class EasyTrader(TraderApi):
 
     def query_all_instruments(self, timeout=10):
         instrument = ApiStruct.QryInstrument()
-        request_id = self.request_id
+        request_id = next(self.request_id)
         self.ReqQryInstrument(instrument, request_id)
-        self.request_id += 1
 
         instrument_ids = []
         while True:
@@ -90,10 +109,8 @@ class EasyTrader(TraderApi):
                 pInstrument, pRspInfo, bIsLast = self.results_map[request_id].get(timeout=timeout)
             except Empty:
                 raise TimeoutError
-            assert isinstance(pInstrument, ApiStruct.Instrument)
+            if len(pInstrument.InstrumentID) > 0:
+                instrument_ids.append(pInstrument.InstrumentID.decode('gbk'))
             if bIsLast:
                 del self.results_map[request_id]
                 return instrument_ids
-            if len(pInstrument.InstrumentID) <= 0:
-                continue
-            instrument_ids.append(pInstrument.InstrumentID.decode('gbk'))
