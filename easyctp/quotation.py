@@ -1,5 +1,6 @@
 import itertools
 import tempfile
+from copy import copy
 from queue import Queue, Empty
 
 from ctp.futures import ApiStruct, MdApi
@@ -95,4 +96,4 @@ class MarketDataApi(MdApi):
             log.info('登录信息发送成功，等待返回')
 
     def OnRtnDepthMarketData(self, pDepthMarketData):
-        self.market_data.put(pDepthMarketData)
+        self.market_data.put(copy(pDepthMarketData))
