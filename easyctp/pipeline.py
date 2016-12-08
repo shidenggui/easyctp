@@ -1,3 +1,4 @@
+import itertools
 import threading
 import traceback
 from multiprocessing.dummy import Pool
@@ -28,10 +29,15 @@ class BasePipeline:
             self.__next__()
 
     def get(self):
-        item = self.queue.get()
-        future = self.pool.apply_async(self._process_item, args=(item,))
-        self.result_queue.put(future)
-        return self._convert_item(item)
+        while True:
+            item = self.queue.get()
+
+            future = self.pool.apply_async(self._process_item, args=(item,))
+            self.result_queue.put(future)
+
+            convert_item = self._convert_item(item)
+            if convert_item is not None:
+                return convert_item
 
     def _process_item(self, item):
         """impl code here"""
@@ -62,6 +68,25 @@ class SaveMongo(BasePipeline):
     pass
 
 
+class FilterInvalidItem(BasePipeline):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.request_id = itertools.count()
+
+    def _convert_item(self, item: ApiStruct.DepthMarketData):
+        item.request_id = next(self.request_id)
+        if len(item.UpdateTime) != 8:
+            log.warn('invalid update time, item: {} skipping'.format(simple(item)))
+            return None
+        if len(item.ActionDay) != 8:
+            log.warn('invalid time, item: {} skipping'.format(simple(item)))
+            return None
+        if len(item.InstrumentID) <= 2:
+            log.warn('invalid instrument id, item: {} skipping'.format(simple(item)))
+            return None
+        return item
+
+
 class SaveInflux(BasePipeline):
     def __init__(self, queue, worker=10,
                  host='localhost',
@@ -85,7 +110,6 @@ class SaveInflux(BasePipeline):
         self.client.create_database(self.database)
 
     def _process_item(self, item):
-        assert isinstance(item, ApiStruct.DepthMarketData)
         try:
             points = [{
                 'measurement': 'ctp',
@@ -94,7 +118,8 @@ class SaveInflux(BasePipeline):
                 },
                 'fields': dict(LastPrice=item.LastPrice, PreSettlementPrice=item.PreSettlementPrice,
                                PreClosePrice=item.PreClosePrice, PreOpenInterest=item.PreOpenInterest,
-                               OpenPrice=item.OpenPrice, HighestPrice=item.HighestPrice, LowestPrice=item.LowestPrice,
+                               OpenPrice=item.OpenPrice, HighestPrice=item.HighestPrice,
+                               LowestPrice=item.LowestPrice,
                                Volume=item.Volume,
                                Turnover=item.Turnover, OpenInterest=item.OpenInterest, ClosePrice=item.ClosePrice,
                                SettlementPrice=item.SettlementPrice, UpperLimitPrice=item.UpperLimitPrice,
@@ -106,14 +131,27 @@ class SaveInflux(BasePipeline):
                                                     item.UpdateMillisec)
             }]
         except UnicodeDecodeError:
-            log.error('invalid decode item {}, skipping'.format(item))
+            log.error('invalid decode item {}, skipping'.format(simple(item)))
             return
         try:
             self.client.write_points(points, database=self.database)
         except Exception as e:
-            log.error('influxdb client write points error: ', e)
+            log.error(
+                'influxdb client write points error: {}, item: {}, points: {} item: {}'.format(e, simple(item), points,
+                                                                                               simple(item)))
 
 
 class PrintItem(BasePipeline):
     def _process_item(self, item):
         log.info('item: {}'.format(item))
+
+
+def simple(item: ApiStruct.DepthMarketData):
+    return {
+        'instrument_id': item.InstrumentID,
+        'update_time': item.UpdateTime,
+        'update_time_len': len(item.UpdateTime),
+        'update_millisec': item.UpdateMillisec,
+        'action_day': item.ActionDay,
+        'id': item.request_id
+    }

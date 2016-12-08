@@ -109,8 +109,11 @@ class EasyTrader(TraderApi):
                 pInstrument, pRspInfo, bIsLast = self.results_map[request_id].get(timeout=timeout)
             except Empty:
                 raise TimeoutError
-            if len(pInstrument.InstrumentID) > 0:
-                instrument_ids.append(pInstrument.InstrumentID.decode('gbk'))
+            if len(pInstrument.InstrumentID) > 2:
+                try:
+                    instrument_ids.append(pInstrument.InstrumentID.decode('gbk'))
+                except UnicodeDecodeError:
+                    log.warn('invalid InstrumentID {}'.format(pInstrument))
             if bIsLast:
                 del self.results_map[request_id]
-                return instrument_ids
+                return set(instrument_ids)

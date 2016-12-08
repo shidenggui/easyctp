@@ -1,4 +1,4 @@
-from easyctp.pipeline import SaveInflux
+from easyctp.pipeline import FilterInvalidItem, SaveInflux
 from easyctp.quotation import MarketDataApi
 from easyctp.trader import EasyTrader
 
@@ -17,5 +17,6 @@ class MarketDataFacade:
                                  front=front,
                                  instrument_ids=instrument_ids)
 
-        pipe = SaveInflux(market_data, worker=worker, host=influxdb_uri)
+        pipe = SaveInflux(
+            FilterInvalidItem(market_data), worker=worker, host=influxdb_uri)
         pipe.start()
