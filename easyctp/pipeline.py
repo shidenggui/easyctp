@@ -88,6 +88,14 @@ class FilterInvalidItem(BasePipeline):
 
 
 class SaveInflux(BasePipeline):
+    CQ_TEMPLATE = '''
+        CREATE CONTINUOUS QUERY "ctp_{interval}" ON "ctp"
+        BEGIN
+              SELECT min(*), max(*), mean(*) INTO ctp..ctp_{interval}
+              FROM ctp{previous_interval}
+              GROUP BY time({interval}), instrument_id
+        END'''
+
     def __init__(self, queue, worker=10,
                  host='localhost',
                  port=8086,
@@ -107,17 +115,14 @@ class SaveInflux(BasePipeline):
 
         self.client = influxdb.InfluxDBClient(host=host, username=username, password=password, database=database,
                                               port=port)
+
         self.client.create_database(self.database)
-        self.client.query('''
-        CREATE CONTINUOUS QUERY "ctp_1m" ON "ctp"
-        BEGIN
-              SELECT min(*), max(*), mean(*) INTO ctp..ctp_1m  from ctp GROUP BY time(1m), instrument_id
-        END''')
-        self.client.query('''
-        CREATE CONTINUOUS QUERY "ctp_5m" ON "ctp"
-        BEGIN
-              SELECT min(*), max(*), mean(*) INTO ctp..ctp_5m  from ctp_1m GROUP BY time(5m), instrument_id
-        END''')
+
+        intervals = ['1m', '5m', '15m', '30m', '1h', '1d']
+        for i, interval in enumerate(intervals):
+            previous_interval = '_' + intervals[i - 1] if i != 0 else ''
+            cq = self.CQ_TEMPLATE.format(previous_interval=previous_interval, interval=interval)
+            self.client.query(cq)
 
     def _process_item(self, item):
         try:
