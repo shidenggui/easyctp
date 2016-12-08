@@ -89,9 +89,9 @@ class FilterInvalidItem(BasePipeline):
 
 class SaveInflux(BasePipeline):
     CQ_TEMPLATE = '''
-        CREATE CONTINUOUS QUERY "ctp_{interval}" ON "ctp"
+        CREATE CONTINUOUS QUERY "{db}_ctp_{interval}" ON "ctp"
         BEGIN
-              SELECT min(*), max(*), mean(*) INTO ctp..ctp_{interval}
+              SELECT min(*), max(*), mean(*), first(*), last(*) INTO ctp_{interval}
               FROM ctp{previous_interval}
               GROUP BY time({interval}), instrument_id
         END'''
@@ -121,7 +121,7 @@ class SaveInflux(BasePipeline):
         intervals = ['1m', '5m', '15m', '30m', '1h', '1d']
         for i, interval in enumerate(intervals):
             previous_interval = '_' + intervals[i - 1] if i != 0 else ''
-            cq = self.CQ_TEMPLATE.format(previous_interval=previous_interval, interval=interval)
+            cq = self.CQ_TEMPLATE.format(previous_interval=previous_interval, interval=interval, db=database)
             self.client.query(cq)
 
     def _process_item(self, item):
