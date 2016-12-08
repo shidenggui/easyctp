@@ -116,7 +116,7 @@ class SaveInflux(BasePipeline):
         self.client.query('''
         CREATE CONTINUOUS QUERY "ctp_5m" ON "ctp"
         BEGIN
-              SELECT min(*), max(*), mean(*) INTO ctp..ctp_5m  from ctp GROUP BY time(5m), instrument_id
+              SELECT min(*), max(*), mean(*) INTO ctp..ctp_5m  from ctp_1m GROUP BY time(5m), instrument_id
         END''')
 
     def _process_item(self, item):
