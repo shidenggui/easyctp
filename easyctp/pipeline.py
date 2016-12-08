@@ -108,6 +108,16 @@ class SaveInflux(BasePipeline):
         self.client = influxdb.InfluxDBClient(host=host, username=username, password=password, database=database,
                                               port=port)
         self.client.create_database(self.database)
+        self.client.query('''
+        CREATE CONTINUOUS QUERY "ctp_1m" ON "ctp"
+        BEGIN
+              SELECT min(*), max(*), mean(*) INTO ctp..ctp_1m  from ctp GROUP BY time(1m), instrument_id
+        END''')
+        self.client.query('''
+        CREATE CONTINUOUS QUERY "ctp_5m" ON "ctp"
+        BEGIN
+              SELECT min(*), max(*), mean(*) INTO ctp..ctp_5m  from ctp GROUP BY time(5m), instrument_id
+        END''')
 
     def _process_item(self, item):
         try:
