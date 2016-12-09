@@ -1,4 +1,3 @@
-import itertools
 import threading
 import traceback
 from multiprocessing.dummy import Pool
@@ -113,12 +112,10 @@ class SaveInflux(AsyncPipeline):
             password = args.password
             database = args.path[1:]
 
-        self.database = database
+        self.client = influxdb.InfluxDBClient(host=host, username=username, password=password, port=port)
 
-        self.client = influxdb.InfluxDBClient(host=host, username=username, password=password, database=database,
-                                              port=port)
-
-        self.client.create_database(self.database)
+        self.client.create_database(database)
+        self.client.switch_database(database)
 
         intervals = ['1m', '5m', '15m', '30m', '1h', '1d']
         for i, interval in enumerate(intervals):
@@ -151,7 +148,7 @@ class SaveInflux(AsyncPipeline):
             log.error('invalid decode item {}, skipping'.format(simple(item)))
             return
         try:
-            self.client.write_points(points, database=self.database)
+            self.client.write_points(points)
         except Exception as e:
             log.error(
                 'influxdb client write points error: {}, item: {}, points: {} item: {}'.format(e, simple(item), points,
