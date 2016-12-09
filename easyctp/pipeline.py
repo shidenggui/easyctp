@@ -90,7 +90,7 @@ class FilterInvalidItem(BasePipeline):
 
 class SaveInflux(AsyncPipeline):
     CQ_TEMPLATE = '''
-        CREATE CONTINUOUS QUERY "{db}_ctp_{interval}" ON "ctp"
+        CREATE CONTINUOUS QUERY "{db}_ctp_{interval}" ON "{db}"
         BEGIN
               SELECT min(*), max(*), mean(*), first(*), last(*) INTO ctp_{interval}
               FROM ctp{previous_interval}
