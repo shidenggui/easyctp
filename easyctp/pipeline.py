@@ -75,10 +75,8 @@ class SaveMongo(BasePipeline):
 class FilterInvalidItem(BasePipeline):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.request_id = itertools.count()
 
     def _process_item(self, item: ApiStruct.DepthMarketData):
-        item.request_id = next(self.request_id)
         if len(item.UpdateTime) != 8:
             log.warn('invalid update time, item: {} skipping'.format(simple(item)))
             return None
@@ -172,5 +170,4 @@ def simple(item: ApiStruct.DepthMarketData):
         'update_time_len': len(item.UpdateTime),
         'update_millisec': item.UpdateMillisec,
         'action_day': item.ActionDay,
-        'id': item.request_id
     }
