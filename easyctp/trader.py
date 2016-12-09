@@ -3,8 +3,7 @@ import tempfile
 import time
 from collections import defaultdict
 from copy import copy
-from queue import Empty
-from queue import Queue
+from queue import Queue, Empty
 
 from ctp.futures import TraderApi, ApiStruct
 

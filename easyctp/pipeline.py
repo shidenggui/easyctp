@@ -12,11 +12,8 @@ from easyctp.log import log
 
 
 class BasePipeline:
-    def __init__(self, queue, worker=1):
+    def __init__(self, queue):
         self.queue = queue
-        self.pool = Pool(worker)
-        self.result_queue = Queue()
-        threading.Thread(target=self._detect_error, daemon=True).start()
 
     def __next__(self):
         return self.get()
@@ -32,18 +29,25 @@ class BasePipeline:
         while True:
             item = self.queue.get()
 
-            future = self.pool.apply_async(self._process_item, args=(item,))
-            self.result_queue.put(future)
-
-            convert_item = self._convert_item(item)
+            convert_item = self._process_item(item)
             if convert_item is not None:
                 return convert_item
 
     def _process_item(self, item):
-        """impl code here"""
-        pass
+        self._process_item(item)
+        return item
 
-    def _convert_item(self, item):
+
+class AsyncPipeline(BasePipeline):
+    def __init__(self, queue, worker=10):
+        super().__init__(queue)
+        self.pool = Pool(worker)
+        self.result_queue = Queue()
+        threading.Thread(target=self._detect_error, daemon=True).start()
+
+    def _process_item(self, item):
+        future = self.pool.apply_async(self._process_item, args=(item,))
+        self.result_queue.put(future)
         return item
 
     def _detect_error(self):
@@ -56,7 +60,7 @@ class BasePipeline:
 
 
 class ConvertDict(BasePipeline):
-    def _convert_item(self, item):
+    def _process_item(self, item):
         return dict(item)
 
 
@@ -73,7 +77,7 @@ class FilterInvalidItem(BasePipeline):
         super().__init__(*args, **kwargs)
         self.request_id = itertools.count()
 
-    def _convert_item(self, item: ApiStruct.DepthMarketData):
+    def _process_item(self, item: ApiStruct.DepthMarketData):
         item.request_id = next(self.request_id)
         if len(item.UpdateTime) != 8:
             log.warn('invalid update time, item: {} skipping'.format(simple(item)))
@@ -87,7 +91,7 @@ class FilterInvalidItem(BasePipeline):
         return item
 
 
-class SaveInflux(BasePipeline):
+class SaveInflux(AsyncPipeline):
     CQ_TEMPLATE = '''
         CREATE CONTINUOUS QUERY "{db}_ctp_{interval}" ON "ctp"
         BEGIN
