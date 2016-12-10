@@ -1,7 +1,5 @@
 import threading
-import traceback
-from multiprocessing.dummy import Pool
-from queue import Queue
+from queue import Queue, Empty
 from urllib.parse import urlparse
 
 import influxdb
@@ -33,29 +31,7 @@ class BasePipeline:
                 return convert_item
 
     def _process_item(self, item):
-        self._process_item(item)
         return item
-
-
-class AsyncPipeline(BasePipeline):
-    def __init__(self, queue, worker=10):
-        super().__init__(queue)
-        self.pool = Pool(worker)
-        self.result_queue = Queue()
-        threading.Thread(target=self._detect_error, daemon=True).start()
-
-    def _process_item(self, item):
-        future = self.pool.apply_async(self._process_item, args=(item,))
-        self.result_queue.put(future)
-        return item
-
-    def _detect_error(self):
-        while True:
-            future = self.result_queue.get()
-            try:
-                future.get()
-            except:
-                traceback.print_exc()
 
 
 class ConvertDict(BasePipeline):
@@ -88,7 +64,7 @@ class FilterInvalidItem(BasePipeline):
         return item
 
 
-class SaveInflux(AsyncPipeline):
+class SaveInflux(BasePipeline):
     CQ_TEMPLATE = '''
         CREATE CONTINUOUS QUERY "{db}_ctp_{interval}" ON "{db}"
         BEGIN
@@ -97,13 +73,13 @@ class SaveInflux(AsyncPipeline):
               GROUP BY time({interval}), instrument_id
         END'''
 
-    def __init__(self, queue, worker=10,
+    def __init__(self, queue, worker=10, batch_size=20,
                  host='localhost',
                  port=8086,
                  username='root',
                  password='root',
                  database=None):
-        super().__init__(queue, worker)
+        super().__init__(queue)
         if 'influxdb://' in host:
             args = urlparse(host)
             host = args.hostname
@@ -112,47 +88,77 @@ class SaveInflux(AsyncPipeline):
             password = args.password
             database = args.path[1:]
 
+        # init client
         self.client = influxdb.InfluxDBClient(host=host, username=username, password=password, port=port)
 
+        # create database if not exists
         self.client.create_database(database)
         self.client.switch_database(database)
 
+        # create cq if not exists
         intervals = ['1m', '5m', '15m', '30m', '1h', '1d']
         for i, interval in enumerate(intervals):
             previous_interval = '_' + intervals[i - 1] if i != 0 else ''
             cq = self.CQ_TEMPLATE.format(previous_interval=previous_interval, interval=interval, db=database)
             self.client.query(cq)
 
-    def _process_item(self, item):
-        try:
-            points = [{
-                'measurement': 'ctp',
-                'tags': {
-                    'instrument_id': item.InstrumentID.decode(),
-                },
-                'fields': dict(LastPrice=item.LastPrice, PreSettlementPrice=item.PreSettlementPrice,
-                               PreClosePrice=item.PreClosePrice, PreOpenInterest=item.PreOpenInterest,
-                               OpenPrice=item.OpenPrice, HighestPrice=item.HighestPrice,
-                               LowestPrice=item.LowestPrice,
-                               Volume=item.Volume,
-                               Turnover=item.Turnover, OpenInterest=item.OpenInterest, ClosePrice=item.ClosePrice,
-                               SettlementPrice=item.SettlementPrice, UpperLimitPrice=item.UpperLimitPrice,
-                               LowerLimitPrice=item.LowerLimitPrice,
-                               PreDelta=item.PreDelta, CurrDelta=item.CurrDelta,
-                               BidPrice1=item.BidPrice1, BidVolume1=item.BidVolume1, AskPrice1=item.AskPrice1,
-                               AskVolume1=item.AskVolume1, AveragePrice=item.AveragePrice),
-                'time': '{}T{}.{:03d}+08:00'.format(item.ActionDay.decode(), item.UpdateTime.decode(),
-                                                    item.UpdateMillisec)
-            }]
-        except UnicodeDecodeError:
-            log.error('invalid decode item {}, skipping'.format(simple(item)))
-            return
+        self.batch_queue = Queue()
+
+        for _ in range(worker):
+            threading.Thread(target=self.batch_insert_worker, args=(batch_size,)).start()
+
+    def batch_insert_worker(self, batch_size):
+        points = []
+        while True:
+            try:
+                try:
+                    item = self.batch_queue.get(timeout=0.5)
+                except Empty:
+                    if len(points) > 0:
+                        self.client.write_points(points)
+                    continue
+                point = self.convert_to_point(item)
+                points.append(point)
+
+                if len(points) < batch_size:
+                    continue
+                self.flush_points(points)
+            except Exception as e:
+                log.error('batch insert unexpected error: {}'.format(e))
+
+    @staticmethod
+    def convert_to_point(item):
+        return {
+            'measurement': 'ctp',
+            'tags': {
+                'instrument_id': item.InstrumentID.decode(),
+            },
+            'fields': dict(LastPrice=item.LastPrice, PreSettlementPrice=item.PreSettlementPrice,
+                           PreClosePrice=item.PreClosePrice, PreOpenInterest=item.PreOpenInterest,
+                           OpenPrice=item.OpenPrice, HighestPrice=item.HighestPrice,
+                           LowestPrice=item.LowestPrice,
+                           Volume=item.Volume,
+                           Turnover=item.Turnover, OpenInterest=item.OpenInterest, ClosePrice=item.ClosePrice,
+                           SettlementPrice=item.SettlementPrice, UpperLimitPrice=item.UpperLimitPrice,
+                           LowerLimitPrice=item.LowerLimitPrice,
+                           PreDelta=item.PreDelta, CurrDelta=item.CurrDelta,
+                           BidPrice1=item.BidPrice1, BidVolume1=item.BidVolume1, AskPrice1=item.AskPrice1,
+                           AskVolume1=item.AskVolume1, AveragePrice=item.AveragePrice),
+            'time': '{}T{}.{:03d}+08:00'.format(item.TradingDay.decode(), item.UpdateTime.decode(),
+                                                item.UpdateMillisec)
+        }
+
+    def flush_points(self, points):
         try:
             self.client.write_points(points)
         except Exception as e:
             log.error(
-                'influxdb client write points error: {}, item: {}, points: {} item: {}'.format(e, simple(item), points,
-                                                                                               simple(item)))
+                'influxdb client write points error: {}, points: {}'.format(e, points))
+        del points[:]
+
+    def _process_item(self, item):
+        self.batch_queue.put(item)
+        return item
 
 
 class PrintItem(BasePipeline):
