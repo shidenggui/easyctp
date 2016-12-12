@@ -68,7 +68,7 @@ class SaveInflux(BasePipeline):
     CQ_TEMPLATE = '''
         CREATE CONTINUOUS QUERY "{db}_ctp_{interval}" ON "{db}"
         BEGIN
-              SELECT min(*), max(*), mean(*), first(*), last(*) INTO ctp_{interval}
+              SELECT min(*), max(*), first(*), last(*) INTO ctp_{interval}
               FROM ctp{previous_interval}
               GROUP BY time({interval}), instrument_id
         END'''
@@ -141,7 +141,7 @@ class SaveInflux(BasePipeline):
                            Turnover=item.Turnover, OpenInterest=item.OpenInterest, ClosePrice=item.ClosePrice,
                            SettlementPrice=item.SettlementPrice, UpperLimitPrice=item.UpperLimitPrice,
                            LowerLimitPrice=item.LowerLimitPrice,
-                           PreDelta=item.PreDelta, CurrDelta=item.CurrDelta,
+                           PreDelta=item.PreDelta,
                            BidPrice1=item.BidPrice1, BidVolume1=item.BidVolume1, AskPrice1=item.AskPrice1,
                            AskVolume1=item.AskVolume1, AveragePrice=item.AveragePrice),
             'time': '{}T{}.{:03d}+08:00'.format(item.TradingDay.decode(), item.UpdateTime.decode(),
