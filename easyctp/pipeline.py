@@ -3,7 +3,9 @@ from queue import Queue, Empty
 from urllib.parse import urlparse
 
 import influxdb
+import pymongo
 from ctp.futures import ApiStruct
+from pymongo import MongoClient
 
 from easyctp.log import log
 
@@ -44,7 +46,47 @@ class SaveMysql(BasePipeline):
 
 
 class SaveMongo(BasePipeline):
-    pass
+    def __init__(self, queue, host, worker=10, batch_size=10):
+        super().__init__(queue)
+        client = MongoClient(host)
+        self.db = client.get_default_database()
+        self.db.ctp.create_index([
+            ('InstrumentID', pymongo.DESCENDING)
+        ])
+
+        self.batch_queue = Queue()
+        for _ in range(worker):
+            threading.Thread(target=self.batch_insert_worker, args=(batch_size,), daemon=True).start()
+
+    def _process_item(self, item):
+        self.batch_queue.put(item)
+        return item
+
+    def batch_insert_worker(self, batch_size):
+        items = []
+        while True:
+            try:
+                try:
+                    item = self.batch_queue.get(timeout=0.5)
+                except Empty:
+                    if len(items) > 0:
+                        self.flush_items(items)
+                    continue
+
+                items.append(dict(item))
+                if len(items) < batch_size:
+                    continue
+                self.flush_items(items)
+            except Exception as e:
+                log.error('batch insert unexpected error: {}'.format(e))
+
+    def flush_items(self, items):
+        try:
+            self.db.ctp.insert_many(items)
+        except Exception as e:
+            log.error('batch insert error: {}'.format(e))
+        finally:
+            del items[:]
 
 
 class FilterInvalidItem(BasePipeline):
