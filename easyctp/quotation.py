@@ -83,7 +83,7 @@ class MarketDataApi(MdApi):
             log.error('登录失败 ErrorID: {} ErrorMsg: {}'.format(pRspInfo.ErrorID, pRspInfo.ErrorMsg))
 
     def OnFrontDisconnected(self, nReason):
-        log.error('客户端无法注册服务器地址: ', nReason)
+        log.error('客户端无法注册服务器地址: {}'.format(nReason))
 
     def OnFrontConnected(self):
         log.info('客户端与交易后台建立连接成功, 开始登录')
