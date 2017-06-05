@@ -53,7 +53,7 @@ class MongoStrategy:
 
     def save(self, item):
         now = datetime.datetime.now()
-        time_str = '{}T{}.{:03d}'.format(item.TradingDay.decode(), item.UpdateTime.decode(),
+        time_str = '{}T{}.{:03d}'.format(item.ActionDay.decode(), item.UpdateTime.decode(),
                                          item.UpdateMillisec)
         tick = dict(LastPrice=item.LastPrice, PreSettlementPrice=item.PreSettlementPrice,
                     PreClosePrice=item.PreClosePrice, PreOpenInterest=item.PreOpenInterest,
